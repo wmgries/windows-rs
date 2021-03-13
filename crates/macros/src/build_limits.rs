@@ -1,35 +1,14 @@
-use crate::*;
+use super::*;
+use gen::{NamespaceTypes, TypeLimit, TypeLimits, TypeReader, TypeTree};
 use std::convert::{TryFrom, TryInto};
 use syn::spanned::Spanned;
-use windows_gen::{NamespaceTypes, TypeLimit, TypeLimits, TypeTree};
 
 pub struct BuildLimits(pub std::collections::BTreeSet<TypesDeclaration>);
 
 impl BuildLimits {
     pub fn to_tokens_string(self) -> Result<String, proc_macro2::TokenStream> {
-        let is_foundation = self.0.is_empty();
-
-        let reader = winmd::TypeReader::get();
-
+        let reader = TypeReader::get();
         let mut limits = TypeLimits::new(reader);
-
-        let foundation_namespaces = &[
-            "Windows.Foundation",
-            "Windows.Foundation.Collections",
-            "Windows.Foundation.Diagnostics",
-            "Windows.Foundation.Numerics",
-        ];
-
-        if is_foundation {
-            for namespace in foundation_namespaces {
-                limits
-                    .insert(NamespaceTypes {
-                        namespace: &namespace,
-                        limit: TypeLimit::All,
-                    })
-                    .unwrap();
-            }
-        }
 
         for limit in self.0 {
             let types = limit.types;
@@ -40,20 +19,14 @@ impl BuildLimits {
             })?;
         }
 
-        let mut tree = TypeTree::from_limits(reader, &limits);
+        let tree = TypeTree::from_limits(reader, &limits);
 
-        if !is_foundation {
-            for namespace in foundation_namespaces {
-                tree.remove(namespace);
-            }
-
-            tree.reexport();
-        }
-
-        let ts = tree.gen().fold(squote::TokenStream::new(), |mut accum, n| {
-            accum.combine(&n);
-            accum
-        });
+        let ts = tree
+            .gen(&tree)
+            .fold(squote::TokenStream::new(), |mut accum, n| {
+                accum.combine(&n);
+                accum
+            });
 
         Ok(ts.into_string())
     }
@@ -116,9 +89,9 @@ impl syn::parse::Parse for BuildLimits {
 }
 
 fn use_tree_to_namespace_types(use_tree: &syn::UseTree) -> syn::parse::Result<NamespaceTypes> {
-    let reader = winmd::TypeReader::get();
+    let reader = TypeReader::get();
     fn recurse(
-        reader: &'static winmd::TypeReader,
+        reader: &'static TypeReader,
         tree: &syn::UseTree,
         current: &mut String,
     ) -> syn::parse::Result<NamespaceTypes> {
@@ -181,7 +154,7 @@ fn use_tree_to_namespace_types(use_tree: &syn::UseTree) -> syn::parse::Result<Na
 }
 
 fn find_namespace(
-    reader: &'static winmd::TypeReader,
+    reader: &'static TypeReader,
     namespace: &str,
     span: proc_macro2::Span,
 ) -> syn::parse::Result<&'static str> {

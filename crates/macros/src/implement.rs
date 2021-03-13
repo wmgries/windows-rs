@@ -1,14 +1,13 @@
-use crate::*;
+use super::*;
 use squote::{format_ident, quote, Literal, TokenStream};
-use windows_gen::format_ident;
 
 // TODO: distinguish between COM and WinRT interfaces
-struct Implements(Vec<windows_gen::TypeDefinition>);
+struct Implements(Vec<gen::ElementType>);
 
 impl syn::parse::Parse for Implements {
     fn parse(inner_type: syn::parse::ParseStream) -> syn::parse::Result<Self> {
         let mut types = Vec::new();
-        let reader = winmd::TypeReader::get();
+        let reader = gen::TypeReader::get();
 
         loop {
             use_tree_to_types(reader, &inner_type.parse::<ImplementTree>()?, &mut types)?;
@@ -23,14 +22,14 @@ impl syn::parse::Parse for Implements {
 }
 
 fn use_tree_to_types(
-    reader: &'static winmd::TypeReader,
+    reader: &'static gen::TypeReader,
     tree: &ImplementTree,
-    types: &mut Vec<windows_gen::TypeDefinition>,
+    types: &mut Vec<gen::ElementType>,
 ) -> syn::parse::Result<()> {
     fn recurse(
-        reader: &'static winmd::TypeReader,
+        reader: &'static gen::TypeReader,
         tree: &ImplementTree,
-        types: &mut Vec<windows_gen::TypeDefinition>,
+        types: &mut Vec<gen::ElementType>,
         current: &mut String,
     ) -> syn::parse::Result<()> {
         match tree {
@@ -62,9 +61,7 @@ fn use_tree_to_types(
                     meta_name.push_str(&generic_count.to_string());
                 }
 
-                let def = reader.expect_type_def((namespace, &meta_name));
-
-                types.push(windows_gen::TypeDefinition::from_type_def(&def));
+                types.push(reader.resolve_type(namespace, &meta_name));
 
                 // TODO
                 // If type is a class, add any required interfaces.
@@ -101,7 +98,7 @@ pub fn gen(
     let mut queries = TokenStream::new();
 
     for (interface_count, implement) in implements.0.iter().enumerate() {
-        if let windows_gen::TypeDefinition::Interface(t) = implement {
+        if let gen::ElementType::Interface(t) = implement {
             vtable_ordinals.push(Literal::u32_unsuffixed(interface_count as u32));
 
             let query_interface = format_ident!("QueryInterface_abi{}", interface_count);
@@ -132,23 +129,28 @@ pub fn gen(
                 }
             });
 
-            let vtable_ident = t.name.gen_full_abi();
-            let interface_ident = t.name.gen_full();
+            let empty = gen::TypeTree::from_namespace("");
+            let gen = gen::Gen::absolute(&empty);
+
+            let vtable_ident = t.0.gen_abi_name(&gen);
+            let interface_ident = t.0.gen_name(&gen);
             let interface_literal = Literal::u32_unsuffixed(interface_count as u32);
 
-            for method in &t.default_interface().methods {
-                let method_ident = format_ident(&method.name);
-                let vcall_ident = format_ident!("abi{}_{}", interface_count, method.vtable_offset);
+            for (vtable_offset, method) in t.0.def.methods().enumerate() {
+                let method_ident = gen::to_ident(&method.rust_name());
+                let vcall_ident = format_ident!("abi{}_{}", interface_count, vtable_offset + 6);
 
                 vtable_ptrs.combine(&quote! {
                     Self::#vcall_ident,
                 });
 
-                let signature = method.gen_full_abi();
-                let upcall = method.gen_upcall(quote! { (*this).inner.#method_ident }, false);
+                let signature = method.signature(&[]);
+                let abi_signature = signature.gen_winrt_abi(&gen);
+                let upcall =
+                    signature.gen_winrt_upcall(quote! { (*this).inner.#method_ident }, &gen);
 
                 shims.combine(&quote! {
-                    unsafe extern "system" fn #vcall_ident #signature {
+                    unsafe extern "system" fn #vcall_ident #abi_signature {
                         let this = (this as *mut ::windows::RawPtr).sub(#interface_count) as *mut Self;
                         #upcall
                     }

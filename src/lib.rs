@@ -5,7 +5,7 @@ way for Rust developers to call Windows APIs. The `windows` crate lets you call 
 future using code generated on the fly directly from the metadata describing the API and right into your Rust package
 where you can call them as if they were just another Rust module.
 
-Learn more here: [https://github.com/microsoft/windows-rs](https://github.com/microsoft/windows-rs)
+Learn more here: <https://github.com/microsoft/windows-rs>
 */
 
 #[macro_use]
@@ -14,33 +14,30 @@ mod macros;
 mod interfaces;
 mod result;
 mod runtime;
-mod strings;
 mod traits;
 
 use interfaces::*;
 use runtime::*;
 
 pub use interfaces::{IActivationFactory, IAgileObject, IUnknown, Object};
-pub use result::{Error, ErrorCode, Result, BOOL, FALSE, TRUE};
+pub use result::{Error, ErrorCode, Result};
 pub use runtime::{
-    create_instance, factory, initialize_mta, initialize_sta, Array, FactoryCache, Guid, Param,
-    RefCount, Waiter,
+    create_instance, factory, initialize_mta, initialize_sta, Array, FactoryCache, Guid, HString,
+    Param, RefCount, Waiter,
 };
-pub use strings::{BString, CoString, HString};
-pub use traits::{Abi, Interface, RuntimeName, RuntimeType};
+pub use traits::{Abi, Interface, IntoParam, RuntimeName, RuntimeType};
 pub use windows_macros::{build, implement};
 
 extern crate self as windows;
 
 mod bindings {
+    #![allow(dead_code)]
     include_bindings!();
 }
 
+// TODO: rather than hiding, consider just removing
 #[doc(hidden)]
 pub type RawPtr = *mut std::ffi::c_void;
-
-#[doc(hidden)]
-pub use bindings::windows::foundation;
 
 #[doc(hidden)]
 pub use const_sha1::ConstBuffer;

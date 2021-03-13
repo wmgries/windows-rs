@@ -1,11 +1,9 @@
-extern crate windows_winmd as winmd;
 mod build_limits;
 mod implement;
 mod implement_tree;
 
 use build_limits::*;
 use implement_tree::*;
-
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::parse_macro_input;
@@ -42,7 +40,7 @@ pub fn build(stream: TokenStream) -> TokenStream {
         Err(t) => return t.into(),
     };
 
-    let workspace_windows_dir = winmd::workspace_windows_dir();
+    let workspace_windows_dir = gen::workspace_windows_dir();
 
     let mut source = workspace_windows_dir.clone();
     source.push(ARCHITECTURE);
@@ -69,11 +67,14 @@ pub fn build(stream: TokenStream) -> TokenStream {
 
             path.push("windows.rs");
             let mut file = ::std::fs::File::create(&path).expect("Failed to create windows.rs");
-            file.write_all(#tokens.as_bytes()).expect("Could not write generated code to output file");
+            let bytes = #tokens.as_bytes();
+            file.write_all(bytes).expect("Could not write generated code to output file");
 
-            let mut cmd = ::std::process::Command::new("rustfmt");
-            cmd.arg(&path);
-            let _ = cmd.output();
+            if bytes.len() < 100_000_000 {
+                let mut cmd = ::std::process::Command::new("rustfmt");
+                cmd.arg(&path);
+                let _ = cmd.output();
+            }
 
             fn copy(source: &::std::path::PathBuf, destination: &mut ::std::path::PathBuf) {
                 if let ::std::result::Result::Ok(files) = ::std::fs::read_dir(source) {
